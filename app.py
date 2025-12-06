@@ -19,34 +19,34 @@ SPREADSHEET_ID = st.secrets.get("sheets_id")
 WORKSHEET_NAME = "Form Yanıtları 1" 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Derecelendirme Etiketleri Sözlüğü
+# Derecelendirme Etiketleri Sözlüğü (Aritmetik hesaplama ve etiketleme için)
 RATING_LABELS = {
-    5: '5-Çok İyi',
-    4: '4-İyi',
-    3: '3-Orta',
-    2: '2-Zayıf',
-    1: '1-Çok Zayıf'
+    5: '5 - Çok İyi',
+    4: '4 - İyi',
+    3: '3 - Orta',
+    2: '2 - Zayıf',
+    1: '1 - Çok Zayıf'
 }
 
-# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI kullanılmıştır (ÖNCEKİ MESAJINIZA GÖRE)
-# Bu başlıklar, DataFrame'deki anahtarlardır.
-# Eğer KeyError alırsanız, bu başlıkları Sheets'ten tekrar kontrol etmelisiniz!
+# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI (KeyError almamak için kritik)
+# Bu başlıklar, uygulamanın anahtarlarıdır:
 TIMESTAMP_COL = 'Zaman damgası' 
 EVENT_TYPE_COL = 'Katıldığınız Etkinlik Türünü Seçiniz' 
 
-# Sütunları netleştiren Yardımcı Sözlük (D, E, F, I, J GRAFİK, G, H, K AÇIK UÇLU)
+# Tüm Sütunların Başlıkları (Kullanıcının verdiği listeye göre kesinleştirilmiştir)
 ALL_COLUMNS_MAPPING = {
-    # DERECE GRAFİKLERİ (D, E, F, I, J sütunları)
+    # DERECE GRAFİKLERİ (D, E, F, I, J)
     'D': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik süresinin yeterliliği]',
     'E': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu]',
-    'F': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.', # F, J ve K'nın yerini almış olabilir, ancak bu F-I-J grafiğe girecek
+    'F': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.', 
     'I': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinliğin beklentilerinizi karşılama düzeyi]',
     'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
-    # AÇIK UÇLU SORULAR (G, H, K sütunları)
+    # AÇIK UÇLU SORULAR (G, H, K)
     'G': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız.',
-    'H': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', # H, I'nın yerini almış olabilir
-    'K': 'Etkinlik ücretinin uygunluğu [K]' # K'nın tam başlığını önceki veriden aldık
+    'H': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', 
+    'K': 'Etkinlik ücretinin uygunluğu [K]' # Önceki verideki K sütun başlığı
 }
+
 # Grafik Sütunları: Sayfalama için ayrıldı.
 GRAPH_COLUMNS_PAGE_2 = {
     ALL_COLUMNS_MAPPING['D']: 'Etkinlik Süresinin Yeterliliği',
@@ -77,6 +77,7 @@ def load_data():
     
     st.info("Google Sheets verisi çekiliyor...")
     try:
+        # GCP Bağlantı Kodu
         creds_json = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
         gc = gspread.authorize(creds)
@@ -89,12 +90,17 @@ def load_data():
         st.error(f"Veri çekilirken kritik bir hata oluştu: {e}")
         return pd.DataFrame()
 
-def extract_title(raw_header, remove_brackets=True):
-    """Köşeli parantez içindeki metni çeker, yoksa başlığın kendisini döndürür."""
+def extract_title(raw_header):
+    """Sadece köşeli parantez içindeki metni çeker, yoksa başlığın kendisini döndürür."""
+    # Köşeli parantez içindeki metni bulmak için RegEx kullanılır
     match = re.search(r'\[(.*?)\]', raw_header)
-    if match and remove_brackets:
+    
+    # Eğer eşleşme bulunduysa, sadece parantez içini döndür
+    if match: 
         return match.group(1).strip()
-    return raw_header.replace('[', '').replace(']', '').strip() # Köşeli parantezleri kaldır
+    
+    # Eğer [ ] bulunamadıysa, başlığın kendisini döndür
+    return raw_header.strip()
 
 def create_pdf_report(html_content):
     """HTML içeriğini WeasyPrint ile PDF'e çevirir."""
@@ -112,11 +118,13 @@ if raw_df.empty: st.stop()
 
 # Veri ön işleme
 df = raw_df.copy()
+
+# Tarih formatına dönüştürme
 if pd.api.types.is_string_dtype(df.get(TIMESTAMP_COL)):
     df[TIMESTAMP_COL] = pd.to_datetime(df[TIMESTAMP_COL], errors='coerce', dayfirst=True)
 
-# Soru Başlıklarını Formatlama (Köşeli parantezleri kaldırarak)
-formatted_columns = {col: extract_title(col, remove_brackets=False) for col in df.columns}
+# Soru Başlıklarını Formatlama
+formatted_columns = {col: extract_title(col) for col in df.columns}
 
 # ----------------------------------------
 # Arayüz Filtreleme (Sidebar)
@@ -136,6 +144,7 @@ with st.sidebar:
         filtered_dates_df = filtered_dates_df[filtered_dates_df[EVENT_TYPE_COL] == selected_event]
         
     if pd.api.types.is_datetime64_any_dtype(df.get(TIMESTAMP_COL)):
+        # Tekrarlanan gün/ay/yıl kayıtlarını kaldırma (Benzersiz Tarihler)
         all_dates = filtered_dates_df[TIMESTAMP_COL].dt.normalize().dropna().unique()
         all_dates_list = pd.to_datetime(all_dates).tolist()
         date_options = ["Tüm Dönemler"] + sorted(all_dates_list, reverse=True)
@@ -218,19 +227,30 @@ if st.session_state['report_generated']:
             try:
                 actual_title = formatted_columns.get(col_name, title)
                 
-                rating_counts = filtered_df[col_name].value_counts(normalize=True).mul(100).rename('Yüzde').reset_index()
+                # --- KRİTİK DÜZELTME: Sayısal değeri çekme (Örn: '5-Çok iyi' -> '5') ---
+                rating_data = filtered_df[col_name].astype(str).str.extract(r'^(\d)').dropna()
+                
+                if rating_data.empty:
+                    st.warning(f"'{actual_title}' için yanıt yok veya yanıt formatı hatalı.")
+                    continue 
+
+                # 1. Yüzde Hesaplama 
+                rating_counts = rating_data[0].value_counts(normalize=True).mul(100).rename('Yüzde').reset_index()
                 rating_counts.columns = ['Derecelendirme', 'Yüzde']
-                rating_counts['Derecelendirme'] = pd.to_numeric(rating_counts['Derecelendirme'], errors='coerce')
+                
+                # 2. Sayısal Dönüşüm ve Sıralama
+                rating_counts['Derecelendirme'] = pd.to_numeric(rating_counts['Derecelendirme'])
                 rating_counts = rating_counts.sort_values(by='Derecelendirme')
                 
-                # Derecelendirme etiketlerini haritalama
+                # 3. Etiket Haritalama (Grafik üzerine yazılacak metin: '5 - Çok İyi')
                 rating_counts['Derecelendirme Etiketi'] = rating_counts['Derecelendirme'].map(RATING_LABELS)
                 
-                # Grafik oluşturma (Streamlit ve PDF için)
+                # Grafik oluşturma
                 fig = px.bar(rating_counts, x='Derecelendirme Etiketi', y='Yüzde', 
                              title=f"**{actual_title}** (Toplam Yanıt: {len(filtered_df)})", text='Yüzde', 
                              color='Derecelendirme Etiketi',
                              category_orders={"Derecelendirme Etiketi": list(RATING_LABELS.values())})
+                
                 fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
                 st.plotly_chart(fig, use_container_width=True)
                 
