@@ -1,0 +1,7 @@
+# Python Environment Files
+.venv/
+*.pyc
+
+# Secrets
+.streamlit/secrets.toml
+*.json
