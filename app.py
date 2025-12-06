@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.service_account import Credentials
 import json
 
 # Sayfa Yapılandırması
