@@ -7,11 +7,11 @@ import re
 from datetime import datetime
 from weasyprint import HTML 
 from io import BytesIO
-import base64 # PDF'e grafik gömmek için eklendi
+import base64 
 
 # --- ÖNEMLİ NOT ---
-# fig.to_image() metodunun çalışması için Streamlit ortamında 'kaleido' kütüphanesinin kurulu olması gerekir.
-# Kurulumu: pip install kaleido
+# Kaleido'nun çalışması için 'packages.txt' dosyanızda 'chromium' paketi olmalıdır.
+# Sütun başlıkları, Sheets'ten gelen tam metinler olmalıdır.
 
 # -----------------------------------------------------
 # 1. Sabit Tanımlamalar ve Ayarlar
@@ -24,7 +24,7 @@ SPREADSHEET_ID = st.secrets.get("sheets_id")
 WORKSHEET_NAME = "Form Yanıtları 1" 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Derecelendirme Etiketleri Sözlüğü
+# Derecelendirme Etiketleri Sözlüğü (Aritmetik hesaplama ve etiketleme için)
 RATING_LABELS = {
     5: '5 - Çok İyi',
     4: '4 - İyi',
@@ -33,19 +33,19 @@ RATING_LABELS = {
     1: '1 - Çok Zayıf'
 }
 
-# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI (Son kesinleştirilmiş listeye göre)
+# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI (KeyError almamak için kritik)
 TIMESTAMP_COL = 'Zaman damgası' 
 EVENT_TYPE_COL = 'Katıldığınız Etkinlik Türünü Seçiniz' 
 
-# Grafik (D, E, F, I, J) ve Açık Uçlu (G, H, K) sütunlarının kesin eşleşmesi
+# Tüm Sütunların Başlıkları (Nihai listeye göre kesinleştirilmiştir)
 ALL_COLUMNS_MAPPING = {
-    # DERECE GRAFİKLERİ (5 Adet)
+    # DERECE GRAFİKLERİ (D, E, F, I, J)
     'D': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik süresinin yeterliliği]',
     'E': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu]',
     'F': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', 
     'I': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinliğin beklentilerinizi karşılama düzeyi]',
     'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
-    # AÇIK UÇLU SORULAR (3 Adet)
+    # AÇIK UÇLU SORULAR (G, H, K)
     'G': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.',
     'H': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız. ', 
     'K': 'Etkinliğe çocuğunuzla beraber katılmak, ebeveyn-çocuk etkileşiminiz ve öğrenme deneyiminiz üzerinde nasıl bir etki yarattı? Lütfen değerlendiriniz. ' 
@@ -81,6 +81,7 @@ def load_data():
     
     st.info("Google Sheets verisi çekiliyor...")
     try:
+        # GCP Bağlantı Kodu
         creds_json = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
         gc = gspread.authorize(creds)
@@ -242,22 +243,37 @@ if st.session_state['report_generated']:
                 rating_counts = rating_counts.sort_values(by='Derecelendirme')
                 rating_counts['Derecelendirme Etiketi'] = rating_counts['Derecelendirme'].map(RATING_LABELS)
                 
-                # Grafik oluşturma (Estetik iyileştirme: plotly_white teması)
-                fig = px.bar(rating_counts, x='Derecelendirme Etiketi', y='Yüzde', 
-                             title=f"**{actual_title}** (Toplam Yanıt: {len(filtered_df)})", text='Yüzde', 
+                # Grafikteki en yüksek yanıtın indeksini bulma (Dilimi ayırmak için)
+                max_percent_index = rating_counts['Yüzde'].idxmax()
+                pull_values = [0.1 if i == max_percent_index else 0 for i in rating_counts.index] # Max dilimi ayır
+
+                # Grafik oluşturma (AYRILMIŞ DİLİMLİ PASTA GRAFİK)
+                fig = px.pie(rating_counts, names='Derecelendirme Etiketi', values='Yüzde', 
+                             title=f"**{actual_title}**",
                              color='Derecelendirme Etiketi',
-                             category_orders={"Derecelendirme Etiketi": list(RATING_LABELS.values())},
-                             template="plotly_white") # Estetik için tema eklendi
+                             color_discrete_sequence=px.colors.sequential.Teal, 
+                             template="plotly_white") 
                 
-                fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside', marker_color='#1f77b4') # Daha güzel bir renk
-                fig.update_layout(title_font_size=18, uniformtext_minsize=8, uniformtext_mode='hide') # Daha temiz layout
+                # 3D ve Estetik Düzenlemeler
+                fig.update_traces(
+                    textinfo='percent+label', 
+                    textfont_size=14,
+                    marker=dict(line=dict(color='#FFFFFF', width=2)), # Yumuşak hatlar
+                    pull=pull_values # En yüksek dilimi ayırma (Explosion Effect)
+                )
+
+                # Merkez Metni: Toplam Yanıt Sayısını Gösterir
+                fig.update_layout(
+                    annotations=[dict(text=f'Toplam Yanıt:<br>{len(filtered_df)}', x=0.5, y=0.5, font_size=18, showarrow=False)],
+                    margin=dict(t=50, b=50, l=100, r=100),
+                    showlegend=True
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # --- PDF DÜZELTMESİ: Grafiği Base64 Görüntüsü Olarak Gömme ---
                 try:
-                    # Grafiği statik PNG görüntüsüne çevir
                     img_bytes = fig.to_image(format="png")
-                    # Görüntüyü Base64'e çevir
                     img_base64 = base64.b64encode(img_bytes).decode('utf-8')
                     
                     graph_html_container += f"""
@@ -267,11 +283,10 @@ if st.session_state['report_generated']:
                     </div>
                     """
                 except ValueError as ve:
-                    # Kaleido kurulu değilse bu hata alınır
                     st.error(f"PDF Görüntü Hatası: Plotly grafiğini resme çevirmek için 'kaleido' kurulu olmalı. Hata: {ve}")
                     graph_html_container += f"<p style='color: red;'>GRAFİK EKLENEMEDİ (Kaleido Hatası)</p>"
                 
-                # Sayfa sonu mantığı
+                # Sayfa sonu mantığı: Sayfa 2 (3 grafik) ve Sayfa 3 (2 grafik)
                 if graph_counter == 3:
                     report_html += f"<div style='page-break-after: always;'>{graph_html_container}</div>"
                     graph_html_container = ""
