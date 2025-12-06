@@ -7,6 +7,11 @@ import re
 from datetime import datetime
 from weasyprint import HTML 
 from io import BytesIO
+import base64 # PDF'e grafik gömmek için eklendi
+
+# --- ÖNEMLİ NOT ---
+# fig.to_image() metodunun çalışması için Streamlit ortamında 'kaleido' kütüphanesinin kurulu olması gerekir.
+# Kurulumu: pip install kaleido
 
 # -----------------------------------------------------
 # 1. Sabit Tanımlamalar ve Ayarlar
@@ -19,7 +24,7 @@ SPREADSHEET_ID = st.secrets.get("sheets_id")
 WORKSHEET_NAME = "Form Yanıtları 1" 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Derecelendirme Etiketleri Sözlüğü (Aritmetik hesaplama ve etiketleme için)
+# Derecelendirme Etiketleri Sözlüğü
 RATING_LABELS = {
     5: '5 - Çok İyi',
     4: '4 - İyi',
@@ -28,30 +33,29 @@ RATING_LABELS = {
     1: '1 - Çok Zayıf'
 }
 
-# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI (KeyError almamak için kritik)
-# Bu başlıklar, uygulamanın anahtarlarıdır:
+# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI (Son kesinleştirilmiş listeye göre)
 TIMESTAMP_COL = 'Zaman damgası' 
 EVENT_TYPE_COL = 'Katıldığınız Etkinlik Türünü Seçiniz' 
 
-# Tüm Sütunların Başlıkları (Kullanıcının verdiği listeye göre kesinleştirilmiştir)
+# Grafik (D, E, F, I, J) ve Açık Uçlu (G, H, K) sütunlarının kesin eşleşmesi
 ALL_COLUMNS_MAPPING = {
-    # DERECE GRAFİKLERİ (D, E, F, I, J)
+    # DERECE GRAFİKLERİ (5 Adet)
     'D': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik süresinin yeterliliği]',
     'E': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu]',
     'F': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', 
     'I': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinliğin beklentilerinizi karşılama düzeyi]',
     'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
-    # AÇIK UÇLU SORULAR (G, H, K)
+    # AÇIK UÇLU SORULAR (3 Adet)
     'G': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.',
     'H': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız. ', 
-    'K': 'Etkinliğe çocuğunuzla beraber katılmak, ebeveyn-çocuk etkileşiminiz ve öğrenme deneyiminiz üzerinde nasıl bir etki yarattı? Lütfen değerlendiriniz. ' # Önceki verideki K sütun başlığı
+    'K': 'Etkinliğe çocuğunuzla beraber katılmak, ebeveyn-çocuk etkileşiminiz ve öğrenme deneyiminiz üzerinde nasıl bir etki yarattı? Lütfen değerlendiriniz. ' 
 }
 
 # Grafik Sütunları: Sayfalama için ayrıldı.
 GRAPH_COLUMNS_PAGE_2 = {
     ALL_COLUMNS_MAPPING['D']: 'Etkinlik Süresinin Yeterliliği',
     ALL_COLUMNS_MAPPING['E']: 'Yöntem ve Tekniklerin Uygunluğu',
-    ALL_COLUMNS_MAPPING['F']: 'Elde Edilen Bilgi/Yeterlilik Değerlendirmesi',
+    ALL_COLUMNS_MAPPING['F']: 'Etkinlikten Yararlanma Düzeyi',
 }
 GRAPH_COLUMNS_PAGE_3 = {
     ALL_COLUMNS_MAPPING['I']: 'Beklentileri Karşılama Düzeyi',
@@ -77,7 +81,6 @@ def load_data():
     
     st.info("Google Sheets verisi çekiliyor...")
     try:
-        # GCP Bağlantı Kodu
         creds_json = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
         gc = gspread.authorize(creds)
@@ -92,14 +95,11 @@ def load_data():
 
 def extract_title(raw_header):
     """Sadece köşeli parantez içindeki metni çeker, yoksa başlığın kendisini döndürür."""
-    # Köşeli parantez içindeki metni bulmak için RegEx kullanılır
     match = re.search(r'\[(.*?)\]', raw_header)
     
-    # Eğer eşleşme bulunduysa, sadece parantez içini döndür
     if match: 
         return match.group(1).strip()
     
-    # Eğer [ ] bulunamadıysa, başlığın kendisini döndür
     return raw_header.strip()
 
 def create_pdf_report(html_content):
@@ -123,7 +123,7 @@ df = raw_df.copy()
 if pd.api.types.is_string_dtype(df.get(TIMESTAMP_COL)):
     df[TIMESTAMP_COL] = pd.to_datetime(df[TIMESTAMP_COL], errors='coerce', dayfirst=True)
 
-# Soru Başlıklarını Formatlama
+# Soru Başlıklarını Formatlama (Sadece parantez içini alır)
 formatted_columns = {col: extract_title(col) for col in df.columns}
 
 # ----------------------------------------
@@ -144,7 +144,6 @@ with st.sidebar:
         filtered_dates_df = filtered_dates_df[filtered_dates_df[EVENT_TYPE_COL] == selected_event]
         
     if pd.api.types.is_datetime64_any_dtype(df.get(TIMESTAMP_COL)):
-        # Tekrarlanan gün/ay/yıl kayıtlarını kaldırma (Benzersiz Tarihler)
         all_dates = filtered_dates_df[TIMESTAMP_COL].dt.normalize().dropna().unique()
         all_dates_list = pd.to_datetime(all_dates).tolist()
         date_options = ["Tüm Dönemler"] + sorted(all_dates_list, reverse=True)
@@ -227,7 +226,7 @@ if st.session_state['report_generated']:
             try:
                 actual_title = formatted_columns.get(col_name, title)
                 
-                # --- KRİTİK DÜZELTME: Sayısal değeri çekme (Örn: '5-Çok iyi' -> '5') ---
+                # KRİTİK DÜZELTME: Sayısal değeri çekme (Örn: '5-Çok iyi' -> '5')
                 rating_data = filtered_df[col_name].astype(str).str.extract(r'^(\d)').dropna()
                 
                 if rating_data.empty:
@@ -238,31 +237,41 @@ if st.session_state['report_generated']:
                 rating_counts = rating_data[0].value_counts(normalize=True).mul(100).rename('Yüzde').reset_index()
                 rating_counts.columns = ['Derecelendirme', 'Yüzde']
                 
-                # 2. Sayısal Dönüşüm ve Sıralama
+                # 2. Sayısal Dönüşüm, Sıralama ve Etiket Haritalama
                 rating_counts['Derecelendirme'] = pd.to_numeric(rating_counts['Derecelendirme'])
                 rating_counts = rating_counts.sort_values(by='Derecelendirme')
-                
-                # 3. Etiket Haritalama (Grafik üzerine yazılacak metin: '5 - Çok İyi')
                 rating_counts['Derecelendirme Etiketi'] = rating_counts['Derecelendirme'].map(RATING_LABELS)
                 
-                # Grafik oluşturma
+                # Grafik oluşturma (Estetik iyileştirme: plotly_white teması)
                 fig = px.bar(rating_counts, x='Derecelendirme Etiketi', y='Yüzde', 
                              title=f"**{actual_title}** (Toplam Yanıt: {len(filtered_df)})", text='Yüzde', 
                              color='Derecelendirme Etiketi',
-                             category_orders={"Derecelendirme Etiketi": list(RATING_LABELS.values())})
+                             category_orders={"Derecelendirme Etiketi": list(RATING_LABELS.values())},
+                             template="plotly_white") # Estetik için tema eklendi
                 
-                fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
+                fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside', marker_color='#1f77b4') # Daha güzel bir renk
+                fig.update_layout(title_font_size=18, uniformtext_minsize=8, uniformtext_mode='hide') # Daha temiz layout
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # PDF için grafiği HTML'e çevirme
-                graph_html_container += f"""
-                <div style="height: 350px; margin-bottom: 20px;">
-                    <h3 style="text-align: center;">{actual_title}</h3>
-                    {fig.to_html(full_html=False, include_plotlyjs='cdn')}
-                </div>
-                """
+                # --- PDF DÜZELTMESİ: Grafiği Base64 Görüntüsü Olarak Gömme ---
+                try:
+                    # Grafiği statik PNG görüntüsüne çevir
+                    img_bytes = fig.to_image(format="png")
+                    # Görüntüyü Base64'e çevir
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    
+                    graph_html_container += f"""
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <h3 style="margin-bottom: 10px; font-size: 16px;">{actual_title}</h3>
+                        <img src="data:image/png;base64,{img_base64}" style="width: 90%; max-width: 600px; display: block; margin: 0 auto;"/>
+                    </div>
+                    """
+                except ValueError as ve:
+                    # Kaleido kurulu değilse bu hata alınır
+                    st.error(f"PDF Görüntü Hatası: Plotly grafiğini resme çevirmek için 'kaleido' kurulu olmalı. Hata: {ve}")
+                    graph_html_container += f"<p style='color: red;'>GRAFİK EKLENEMEDİ (Kaleido Hatası)</p>"
                 
-                # Sayfa sonu mantığı: Sayfa 2 (3 grafik) ve Sayfa 3 (2 grafik)
+                # Sayfa sonu mantığı
                 if graph_counter == 3:
                     report_html += f"<div style='page-break-after: always;'>{graph_html_container}</div>"
                     graph_html_container = ""
