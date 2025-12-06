@@ -20,37 +20,41 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 # 1. Sheets Verisini Çekme Fonksiyonu
 # -----------------------------------------------------
 
-@st.cache_data(ttl=3600) # Veriyi 1 saat önbellekte tut
+
+# Güncellenmiş load_data() fonksiyonunun SADECE ÇEKİRDEĞİ
+@st.cache_data(ttl=3600) 
 def load_data():
     st.info("Google Sheets verisi çekiliyor...")
     
-    # Yerel OAuth Akışı için Client Secrets bilgisi gerekiyor.
-    # Şimdilik bu kısmı boş bırakıyoruz, çünkü Streamlit Cloud'da farklı çalışacak.
-    # Ancak yerel test için Streamlit'in yerleşik OAuth akışını kullanacağız.
-    
     try:
-        # **ÖNEMLİ:** Bu adım, Streamlit Cloud'da Sırlar (Secrets) ile 
-        # veya yerelde Service Account JSON ile daha kolay çalışır. 
-        # Ancak, kullanıcı hesabıyla (OAuth) yerelde denemek için
-        # Streamlit'in sağladığı bir Client ID/Secret kullanmak gerekir. 
-        # Yerel deneme zor olduğu için bu kısmı şimdilik pasif bırakıp,
-        # sadece Cloud ortamında çalışacak şekilde hazırlık yapalım.
+        # 1. Credentials (Kimlik Bilgilerini) oluşturma
+        creds_json = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(
+            creds_json, scopes=SCOPES
+        )
         
-        # **Şimdilik Sadece Placeholder (Yer Tutucu) İle Devam:**
-        # Bu aşama, Cloud'a taşıyınca çalışacaktır. Yerel olarak test etmek
-        # için geçici olarak Sheets API'sine ait Client Secrets dosyası 
-        # gereklidir. Bu süreci basitleştirmek için Cloud Deployment'a odaklanacağız.
+        # 2. gspread ile bağlantı kurma
+        gc = gspread.authorize(creds)
         
-        st.warning("Yerel ortamda OAuth tabanlı Sheets bağlantısı karmaşıktır. Bu kodu Cloud'da test edeceğiz. Geçici bir boş DataFrame oluşturuluyor.")
+        # 3. Sheets ve Sayfayı açma
+        worksheet = gc.open_by_key(SPREADSHEET_ID).worksheet(WORKSHEET_NAME)
         
-        # Geçici Boş DataFrame
-        df = pd.DataFrame({'Durum': ['BAŞARILI'], 'Not': ['Cloud’da Deneyin.']})
+        # 4. Tüm veriyi çekme
+        data = worksheet.get_all_records()
+        
+        # 5. Pandas DataFrame'e dönüştürme
+        df = pd.DataFrame(data)
+        
         return df
 
-    except Exception as e:
-        st.error(f"Hata: {e}")
+    except KeyError:
+        st.error("GCP Secrets yüklenemedi. Lütfen 'secrets.toml' dosyasını kontrol edin.")
         return pd.DataFrame()
-
+    
+    except Exception as e:
+        st.error(f"Veri çekilirken kritik bir hata oluştu: {e}")
+        st.warning("Sheets ID veya Sayfa Adı hatalı olabilir, ya da Service Account'ın erişimi yoktur.")
+        return pd.DataFrame()
 
 # -----------------------------------------------------
 # 2. Arayüz
