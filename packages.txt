@@ -4,3 +4,4 @@ libxml2-dev
 libxml2
 libxslt1.1
 libcairo2
+chromium
