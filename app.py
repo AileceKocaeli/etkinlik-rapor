@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import plotly.express as px
 import re
 from datetime import datetime
-from weasyprint import HTML # PDF oluşturma kütüphanesi
+from weasyprint import HTML 
 from io import BytesIO
 
 # -----------------------------------------------------
@@ -19,26 +19,50 @@ SPREADSHEET_ID = st.secrets.get("sheets_id")
 WORKSHEET_NAME = "Form Yanıtları 1" 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Not: Sütun isimleri, Sheets dosyanızın ilk satırındaki (header) tam metin olmalıdır.
-# Aşağıdaki başlıklar, [köşeli parantez içindeki] harflerin bulunduğu tam metin olarak varsayılmıştır.
+# Derecelendirme Etiketleri Sözlüğü
+RATING_LABELS = {
+    5: '5 - Çok İyi',
+    4: '4 - İyi',
+    3: '3 - Orta',
+    2: '2 - Zayıf',
+    1: '1 - Çok Zayıf'
+}
 
-# Açık Uçlu Sütunlar (Örnek başlıklar, lütfen kendi başlıklarınızla değiştirin!)
-OPEN_ENDED_COLUMNS = [
-    'Soru 1 [F]', 
-    'Soru 2 [G]', 
-    'Etkinlik Mekanının/Ortamının uygunluğu [J]' # J hem derecelendirme hem açık uçlu soru varsayımıyla eklenmiştir
-]
+# Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI kullanılmıştır (ÖNCEKİ MESAJINIZA GÖRE)
+# Bu başlıklar, DataFrame'deki anahtarlardır.
+# Eğer KeyError alırsanız, bu başlıkları Sheets'ten tekrar kontrol etmelisiniz!
+TIMESTAMP_COL = 'Zaman damgası' 
+EVENT_TYPE_COL = 'Katıldığınız Etkinlik Türünü Seçiniz' 
 
-# Grafik Sütunları: Düzgün Sayfalama için 3 ve 2 olarak ayrıldı.
+# Sütunları netleştiren Yardımcı Sözlük (D, E, F, I, J GRAFİK, G, H, K AÇIK UÇLU)
+ALL_COLUMNS_MAPPING = {
+    # DERECE GRAFİKLERİ (D, E, F, I, J sütunları)
+    'D': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik süresinin yeterliliği]',
+    'E': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu]',
+    'F': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.', # F, J ve K'nın yerini almış olabilir, ancak bu F-I-J grafiğe girecek
+    'I': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinliğin beklentilerinizi karşılama düzeyi]',
+    'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
+    # AÇIK UÇLU SORULAR (G, H, K sütunları)
+    'G': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız.',
+    'H': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', # H, I'nın yerini almış olabilir
+    'K': 'Etkinlik ücretinin uygunluğu [K]' # K'nın tam başlığını önceki veriden aldık
+}
+# Grafik Sütunları: Sayfalama için ayrıldı.
 GRAPH_COLUMNS_PAGE_2 = {
-    'Etkinlik Süresinin Yeterliliği [D]': 'Etkinlik Süresinin Yeterliliği',
-    'Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu [E]': 'Etkinlikte Kullanılan Yöntem ve Teknikler',
-    'Etkinlikten yararlanma düzeyiniz [H]': 'Etkinlikten Yararlanma Düzeyi',
+    ALL_COLUMNS_MAPPING['D']: 'Etkinlik Süresinin Yeterliliği',
+    ALL_COLUMNS_MAPPING['E']: 'Yöntem ve Tekniklerin Uygunluğu',
+    ALL_COLUMNS_MAPPING['F']: 'Elde Edilen Bilgi/Yeterlilik Değerlendirmesi',
 }
 GRAPH_COLUMNS_PAGE_3 = {
-    'Etkinliğin beklentilerinizi karşılama düzeyi [I]': 'Etkinliğin Beklentileri Karşılama Düzeyi',
-    'Etkinlik Mekanının/Ortamının uygunluğu [J]': 'Etkinlik Mekanının/Ortamının Uygunluğu'
+    ALL_COLUMNS_MAPPING['I']: 'Beklentileri Karşılama Düzeyi',
+    ALL_COLUMNS_MAPPING['J']: 'Mekanın/Ortamın Uygunluğu'
 }
+# Açık Uçlu Sütunlar
+OPEN_ENDED_COLUMNS = [
+    ALL_COLUMNS_MAPPING['G'], 
+    ALL_COLUMNS_MAPPING['H'],
+    ALL_COLUMNS_MAPPING['K'] 
+]
 
 # -----------------------------------------------------
 # 2. Yardımcı Fonksiyonlar
@@ -48,7 +72,7 @@ GRAPH_COLUMNS_PAGE_3 = {
 def load_data():
     """Google Sheets verisini çeker ve DataFrame olarak döndürür."""
     if not SPREADSHEET_ID:
-        st.error("Sheets ID bulunamadı. Lütfen secrets.toml dosyasını kontrol edin.")
+        st.error("Sheets ID bulunamadı.")
         return pd.DataFrame()
     
     st.info("Google Sheets verisi çekiliyor...")
@@ -65,16 +89,15 @@ def load_data():
         st.error(f"Veri çekilirken kritik bir hata oluştu: {e}")
         return pd.DataFrame()
 
-def extract_title(raw_header):
+def extract_title(raw_header, remove_brackets=True):
     """Köşeli parantez içindeki metni çeker, yoksa başlığın kendisini döndürür."""
     match = re.search(r'\[(.*?)\]', raw_header)
-    if match: return match.group(1).strip()
-    return raw_header
+    if match and remove_brackets:
+        return match.group(1).strip()
+    return raw_header.replace('[', '').replace(']', '').strip() # Köşeli parantezleri kaldır
 
-# PDF OLUŞTURMA FONKSİYONU
 def create_pdf_report(html_content):
     """HTML içeriğini WeasyPrint ile PDF'e çevirir."""
-    # BytesIO kullanarak bellek üzerinde işlem yapma
     pdf_bytes = HTML(string=html_content).write_pdf()
     return pdf_bytes
 
@@ -87,17 +110,13 @@ st.title("📊 Dinamik Etkinlik Raporlama Sistemi")
 
 if raw_df.empty: st.stop() 
 
-# Veri ön işleme ve sütun tanımlama
+# Veri ön işleme
 df = raw_df.copy()
-timestamp_col = df.columns[0] # A Sütunu
-event_type_col = df.columns[11] # L Sütunu
+if pd.api.types.is_string_dtype(df.get(TIMESTAMP_COL)):
+    df[TIMESTAMP_COL] = pd.to_datetime(df[TIMESTAMP_COL], errors='coerce', dayfirst=True)
 
-# Tarih formatına dönüştürme
-if pd.api.types.is_string_dtype(df[timestamp_col]):
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col], errors='coerce', dayfirst=True)
-
-# Soru Başlıklarını Formatlama
-formatted_columns = {col: extract_title(col) for col in df.columns}
+# Soru Başlıklarını Formatlama (Köşeli parantezleri kaldırarak)
+formatted_columns = {col: extract_title(col, remove_brackets=False) for col in df.columns}
 
 # ----------------------------------------
 # Arayüz Filtreleme (Sidebar)
@@ -106,22 +125,19 @@ with st.sidebar:
     st.header("🔍 Rapor Filtreleri")
     
     # 1. Etkinlik Türü Filtresi (L Sütunu)
-    unique_events = df[event_type_col].dropna().unique().tolist()
+    unique_events = df[EVENT_TYPE_COL].dropna().unique().tolist()
     event_options = ["Tüm Kayıtlar"] + unique_events
     selected_event = st.selectbox("1. Etkinlik Türü Seçin", options=event_options, index=0)
     st.markdown("---")
 
-    # 2. Dinamik Tarih Filtresi (A Sütunu) - Etkinlik Türüne Bağlı
+    # 2. Dinamik Tarih Filtresi (Etkinlik Türüne Bağlı)
     filtered_dates_df = df.copy()
     if selected_event != "Tüm Kayıtlar":
-        filtered_dates_df = filtered_dates_df[filtered_dates_df[event_type_col] == selected_event]
+        filtered_dates_df = filtered_dates_df[filtered_dates_df[EVENT_TYPE_COL] == selected_event]
         
-    if pd.api.types.is_datetime64_any_dtype(df[timestamp_col]):
-        # Tekrarlanan gün/ay/yıl kayıtlarını kaldırma (Benzersiz Tarihler)
-        all_dates = filtered_dates_df[timestamp_col].dt.normalize().dropna().unique()
+    if pd.api.types.is_datetime64_any_dtype(df.get(TIMESTAMP_COL)):
+        all_dates = filtered_dates_df[TIMESTAMP_COL].dt.normalize().dropna().unique()
         all_dates_list = pd.to_datetime(all_dates).tolist()
-        
-        # Seçenekleri büyükten küçüğe sırala
         date_options = ["Tüm Dönemler"] + sorted(all_dates_list, reverse=True)
         
         selected_date = st.selectbox(
@@ -131,24 +147,20 @@ with st.sidebar:
             format_func=lambda x: x.strftime('%d/%m/%Y') if isinstance(x, pd.Timestamp) else x
         )
     else:
-        st.warning(f"'{timestamp_col}' sütunu geçerli tarih formatında değil.")
         selected_date = "Tüm Dönemler"
 
     st.markdown("---")
     
     generate_report = st.button("🚀 Rapor Oluştur")
 
-# --- Oturum Durumunu Yönetme ---
-if generate_report:
-    # Filtre değerlerini oturum durumuna kaydet
-    st.session_state['report_generated'] = True
-    st.session_state['selected_event'] = selected_event
-    st.session_state['selected_date'] = selected_date
-    st.session_state['filtered_df'] = None # Önceki filtreyi temizle
-
 if 'report_generated' not in st.session_state:
     st.session_state['report_generated'] = False
     
+if generate_report:
+    st.session_state['report_generated'] = True
+    st.session_state['selected_event'] = selected_event
+    st.session_state['selected_date'] = selected_date
+
 # ----------------------------------------
 # 4. Filtreleme ve Raporlama Mantığı
 # ----------------------------------------
@@ -157,25 +169,22 @@ if st.session_state['report_generated']:
     selected_event = st.session_state['selected_event']
     selected_date = st.session_state['selected_date']
 
-    # Filtreleme İşlemi (Sadece buton tetiklendiğinde çalışır)
     filtered_df = df.copy()
 
     if selected_event != "Tüm Kayıtlar":
-        filtered_df = filtered_df[filtered_df[event_type_col] == selected_event]
+        filtered_df = filtered_df[filtered_df[EVENT_TYPE_COL] == selected_event]
 
     if selected_date != "Tüm Dönemler":
         date_to_filter = selected_date.normalize()
-        filtered_df = filtered_df[filtered_df[timestamp_col].dt.normalize() == date_to_filter]
+        filtered_df = filtered_df[filtered_df[TIMESTAMP_COL].dt.normalize() == date_to_filter]
         
-    # Başarılı Filtreleme Özeti
     criteria_summary = f"Etkinlik: **{selected_event}** | Tarih: **{selected_date.strftime('%d/%m/%Y') if selected_date != 'Tüm Dönemler' else 'Tüm Dönemler'}** | Toplam Yanıt: **{len(filtered_df)}**"
     st.subheader("✅ Rapor Hazır")
     st.info(criteria_summary)
-
+    
     if filtered_df.empty:
         st.warning("Seçilen kriterlere uygun yanıt bulunamadı.")
     else:
-        # PDF ve Ekran çıktısı için HTML yapısını tutan değişken
         report_html = "" 
         
         # ----------------------------------------
@@ -201,7 +210,7 @@ if st.session_state['report_generated']:
         graph_counter = 0
         graph_html_container = "" 
         
-        st.subheader("Grafik ve Özet Rapor")
+        st.subheader("Grafik ve Özet Rapor (Derecelendirmeler)")
 
         for col_name, title in all_graphs.items():
             graph_counter += 1
@@ -214,15 +223,18 @@ if st.session_state['report_generated']:
                 rating_counts['Derecelendirme'] = pd.to_numeric(rating_counts['Derecelendirme'], errors='coerce')
                 rating_counts = rating_counts.sort_values(by='Derecelendirme')
                 
-                # Grafik oluşturma (Streamlit için)
-                fig = px.bar(rating_counts, x='Derecelendirme', y='Yüzde', 
+                # Derecelendirme etiketlerini haritalama
+                rating_counts['Derecelendirme Etiketi'] = rating_counts['Derecelendirme'].map(RATING_LABELS)
+                
+                # Grafik oluşturma (Streamlit ve PDF için)
+                fig = px.bar(rating_counts, x='Derecelendirme Etiketi', y='Yüzde', 
                              title=f"**{actual_title}** (Toplam Yanıt: {len(filtered_df)})", text='Yüzde', 
-                             color='Derecelendirme')
+                             color='Derecelendirme Etiketi',
+                             category_orders={"Derecelendirme Etiketi": list(RATING_LABELS.values())})
                 fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # PDF için grafiği HTML'e çevirme
-                # Plotly HTML çıktısı embed edilir.
                 graph_html_container += f"""
                 <div style="height: 350px; margin-bottom: 20px;">
                     <h3 style="text-align: center;">{actual_title}</h3>
@@ -238,7 +250,7 @@ if st.session_state['report_generated']:
                     report_html += f"<div>{graph_html_container}</div>"
                     
             except KeyError:
-                st.warning(f"Grafik oluşturulurken hata: '{col_name}' sütunu veri setinde bulunamadı. Lütfen app.py'deki sabitleri Sheets'ten gelen tam metinlerle güncelleyin.")
+                st.error(f"Kritik Hata: '{col_name}' sütunu bulunamadı. Lütfen Sheets başlıklarını kontrol edin.")
             except Exception as e:
                 st.error(f"Grafik oluşturulurken genel hata: {e}")
                 
@@ -252,7 +264,7 @@ if st.session_state['report_generated']:
         
         for col_name in OPEN_ENDED_COLUMNS:
             try:
-                question_title = formatted_columns.get(col_name, f"{col_name} Sütunu")
+                question_title = formatted_columns.get(col_name, "Açık Uçlu Soru")
                 
                 st.markdown(f"**💬 {question_title}**")
                 
@@ -260,7 +272,6 @@ if st.session_state['report_generated']:
                 
                 # Ekran Çıktısı (Streamlit)
                 if not open_ended_answers.empty:
-                    # En fazla 10 yanıtı ekranda göster, diğerlerini PDF'te
                     for i, answer in open_ended_answers.head(10).items():
                         st.markdown(f"> *{answer}*")
                     
@@ -269,18 +280,17 @@ if st.session_state['report_generated']:
                         
                     # PDF Çıktısı (HTML)
                     report_html += f"""
-                    <h3 style='margin-top: 20px;'>{question_title}</h3>
+                    <h3 style='margin-top: 20px; font-size: 18px;'>{question_title}</h3>
                     <ul style="list-style-type: disc; padding-left: 20px;">
                     """
                     for answer in open_ended_answers:
-                        # Yanıt metinlerinin A4'e sığması için sade format
                         report_html += f"<li style='margin-bottom: 10px; line-height: 1.5;'>{answer}</li>"
                     report_html += f"</ul>"
                     
                 else:
                     st.info(f"Bu soru için yanıt bulunamadı.")
             except KeyError:
-                st.warning(f"Açık Uçlu Yanıt sütunu ('{col_name}') bulunamadı.")
+                st.error(f"Açık Uçlu Sütun ('{col_name}') bulunamadı. Lütfen kontrol edin.")
             except Exception as e:
                 st.error(f"Açık Uçlu Rapor oluşturulurken hata: {e}")
 
@@ -298,8 +308,7 @@ if st.session_state['report_generated']:
                 mime="application/pdf"
             )
         except Exception as e:
-            st.error(f"PDF indirme düğmesi oluşturulurken hata: {e}")
-            st.warning("Bu, Weasyprint'in sistem bağımlılıklarının hala eksik olmasından kaynaklanabilir (packages.txt kontrol edin).")
+            st.error(f"PDF oluşturma sırasında Weasyprint hatası: {e}")
 
 
 # ----------------------------------------
