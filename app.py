@@ -21,11 +21,11 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Derecelendirme Etiketleri Sözlüğü
 RATING_LABELS = {
-    5: '5 - Çok İyi',
-    4: '4 - İyi',
-    3: '3 - Orta',
-    2: '2 - Zayıf',
-    1: '1 - Çok Zayıf'
+    5: '5-Çok İyi',
+    4: '4-İyi',
+    3: '3-Orta',
+    2: '2-Zayıf',
+    1: '1-Çok Zayıf'
 }
 
 # Sheets'ten gelen BİREBİR SÜTUN BAŞLIKLARI kullanılmıştır (ÖNCEKİ MESAJINIZA GÖRE)
