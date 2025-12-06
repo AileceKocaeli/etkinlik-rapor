@@ -13,6 +13,7 @@ st.set_page_config(
 
 # Daha önce kaydettiğiniz Google Sheets ID'sini buraya yapıştırın.
 SPREADSHEET_ID = st.secrets["sheets_id"]
+WORKSHEET_NAME = "Form Yanıtları 1"
 
 # Kapsam (Scopes) – Uygulamanın neye erişeceğini belirtir
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
