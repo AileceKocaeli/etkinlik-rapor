@@ -43,7 +43,7 @@ ALL_COLUMNS_MAPPING = {
     'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
     # AÇIK UÇLU SORULAR (G, H, K)
     'G': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.',
-    'H': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız.', 
+    'H': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız. ', 
     'K': 'Etkinliğe çocuğunuzla beraber katılmak, ebeveyn-çocuk etkileşiminiz ve öğrenme deneyiminiz üzerinde nasıl bir etki yarattı? Lütfen değerlendiriniz. ' # Önceki verideki K sütun başlığı
 }
 
