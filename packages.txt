@@ -1,0 +1,7 @@
+# packages.txt içeriği
+libpango-1.0-0
+libpangoft2-1.0-0
+libxml2-dev
+libxml2
+libxslt1.1
+libcairo2
