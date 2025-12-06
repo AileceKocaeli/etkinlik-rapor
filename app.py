@@ -38,13 +38,13 @@ ALL_COLUMNS_MAPPING = {
     # DERECE GRAFİKLERİ (D, E, F, I, J)
     'D': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik süresinin yeterliliği]',
     'E': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikte kullanılan yöntem ve tekniklerin uygunluğu]',
-    'F': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.', 
+    'F': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', 
     'I': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinliğin beklentilerinizi karşılama düzeyi]',
     'J': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlik mekanının/ortamının uygunluğu]',
     # AÇIK UÇLU SORULAR (G, H, K)
-    'G': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız.',
-    'H': 'Katıldığınız etkinliğin genel olarak değerlendirilmesi [Etkinlikten yararlanma düzeyiniz]', 
-    'K': 'Etkinlik ücretinin uygunluğu [K]' # Önceki verideki K sütun başlığı
+    'G': 'Katıldığınız etkinlikte elde ettiğiniz bilgileri, yeterlilikleri veya kazanımları yazınız.',
+    'H': 'Katıldığınız etkinliğe dair görüş ve önerilerinizi yazınız.', 
+    'K': 'Etkinliğe çocuğunuzla beraber katılmak, ebeveyn-çocuk etkileşiminiz ve öğrenme deneyiminiz üzerinde nasıl bir etki yarattı? Lütfen değerlendiriniz. ' # Önceki verideki K sütun başlığı
 }
 
 # Grafik Sütunları: Sayfalama için ayrıldı.
